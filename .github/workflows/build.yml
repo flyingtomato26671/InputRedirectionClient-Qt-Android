@@ -89,6 +89,39 @@ jobs:
           python3 -c "import xml.dom.minidom as m; m.parse('android/AndroidManifest.xml'); print('manifest OK')"
           rm -rf android/build.gradle android/gradlew android/gradlew.bat android/gradle
 
+          # El manifest y libs.xml del repo son de Qt 5.9. Qt 5.15 lee
+          # android.app.load_local_libs_resource_id (si falta: "String array
+          # resource ID #0x0" y la app se queda en blanco).
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("android/AndroidManifest.xml")
+          s = p.read_text(encoding="utf-8")
+          s = re.sub(r'[ \t]*<meta-data android:name="android\.app\.load_local_libs" [^>]*/>',
+                     '            <meta-data android:name="android.app.load_local_libs_resource_id" android:resource="@array/load_local_libs"/>', s)
+          s = re.sub(r'[ \t]*<meta-data android:name="android\.app\.bundled_in_(lib|assets)_resource_id" [^>]*/>\n?', '', s)
+          s = s.replace('<application android:hardwareAccelerated="true"',
+                        '<application android:extractNativeLibs="true" android:hardwareAccelerated="true"', 1)
+          p.write_text(s, encoding="utf-8")
+          pathlib.Path("android/res/values/libs.xml").write_text('''<?xml version='1.0' encoding='utf-8'?>
+          <resources>
+              <array name="qt_sources">
+                  <item>https://download.qt.io/ministro/android/qt5/qt-5.14</item>
+              </array>
+              <array name="bundled_libs">
+                  <!-- %%INSERT_EXTRA_LIBS%% -->
+              </array>
+              <array name="qt_libs">
+                  <!-- %%INSERT_QT_LIBS%% -->
+              </array>
+              <array name="load_local_libs">
+                  <!-- %%INSERT_LOCAL_LIBS%% -->
+              </array>
+          </resources>
+          ''', encoding="utf-8")
+          PY
+          python3 -c "import xml.dom.minidom as m; m.parse('android/AndroidManifest.xml'); m.parse('android/res/values/libs.xml'); print('manifest + libs.xml OK')"
+          grep -n 'load_local_libs\|bundled_in\|extractNativeLibs' android/AndroidManifest.xml
+
       - name: Configure (qmake)
         run: |
           mkdir build && cd build
