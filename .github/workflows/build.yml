@@ -117,6 +117,18 @@ jobs:
           find build/android-build -name '*.apk' -exec cp {} dist/ \;
           ls -l dist
 
+      - name: Inspect APK (diagnostico)
+        run: |
+          APK=$(ls dist/*.apk | head -1)
+          echo "== Librerias nativas por ABI =="
+          unzip -l "$APK" | grep -E "lib/(arm64-v8a|armeabi-v7a)/" | grep -E "Redux|libQt5(Core|Gui|Widgets|Gamepad)|libc\+\+|gamepad" || true
+          echo "== Badging =="
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/aapt" dump badging "$APK" | head -25
+          echo "== Manifest final =="
+          "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/aapt" dump xmltree "$APK" AndroidManifest.xml | head -120
+          echo "== Deployment settings =="
+          cat build/android-*-deployment-settings.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-apk
