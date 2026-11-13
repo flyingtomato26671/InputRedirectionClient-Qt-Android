@@ -7,10 +7,14 @@
 #include "global.h"
 #include <QTimer>
 #include <QThread>
+#include <QStyleFactory>
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+#ifdef Q_OS_ANDROID
+    a.setStyle(QStyleFactory::create("Fusion"));
+#endif
     Widget w;
     GamepadMonitor m(&w);
 
