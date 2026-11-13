@@ -84,6 +84,8 @@ jobs:
           PY
           sed -i 's/android:minSdkVersion="16"/android:minSdkVersion="21"/; s/android:targetSdkVersion="23"/android:targetSdkVersion="29"/' android/AndroidManifest.xml
           grep -n 'uses-sdk' android/AndroidManifest.xml
+          sed -i 's/android:name="android.app.extract_android_style" android:value="full"/android:name="android.app.extract_android_style" android:value="none"/' android/AndroidManifest.xml
+          grep -n 'extract_android_style' android/AndroidManifest.xml
           python3 -c "import xml.dom.minidom as m; m.parse('android/AndroidManifest.xml'); print('manifest OK')"
           rm -rf android/build.gradle android/gradlew android/gradlew.bat android/gradle
 
