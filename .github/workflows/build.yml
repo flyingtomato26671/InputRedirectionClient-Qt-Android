@@ -101,6 +101,17 @@ jobs:
           s = re.sub(r'[ \t]*<meta-data android:name="android\.app\.bundled_in_(lib|assets)_resource_id" [^>]*/>\n?', '', s)
           s = s.replace('<application android:hardwareAccelerated="true"',
                         '<application android:extractNativeLibs="true" android:hardwareAccelerated="true"', 1)
+          # --- Gamepad en segundo plano: actividad propia + servicio + permisos ---
+          s = s.replace('android:name="org.qtproject.qt5.android.bindings.QtActivity"',
+                        'android:name="org.qtproject.inputredirectionclient.MainActivity"', 1)
+          s = s.replace('android:name="android.app.background_running" android:value="false"',
+                        'android:name="android.app.background_running" android:value="true"', 1)
+          s = s.replace('    </application>',
+                        '        <service android:name="org.qtproject.inputredirectionclient.InputOverlayService" android:exported="false"/>\n    </application>', 1)
+          s = s.replace('    <!-- %%INSERT_PERMISSIONS -->',
+                        '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n'
+                        '    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>\n'
+                        '    <!-- %%INSERT_PERMISSIONS -->', 1)
           p.write_text(s, encoding="utf-8")
           pathlib.Path("android/res/values/libs.xml").write_text('''<?xml version='1.0' encoding='utf-8'?>
           <resources>
@@ -121,6 +132,11 @@ jobs:
           PY
           python3 -c "import xml.dom.minidom as m; m.parse('android/AndroidManifest.xml'); m.parse('android/res/values/libs.xml'); print('manifest + libs.xml OK')"
           grep -n 'load_local_libs\|bundled_in\|extractNativeLibs' android/AndroidManifest.xml
+          # Si algun parche no se aplico, fallar aqui y no producir un APK roto
+          test -f android/src/org/qtproject/inputredirectionclient/MainActivity.java || { echo "::error::Faltan los .java de android/src"; exit 1; }
+          for k in 'inputredirectionclient.MainActivity' 'InputOverlayService' 'SYSTEM_ALERT_WINDOW' 'FOREGROUND_SERVICE' 'background_running" android:value="true"' 'load_local_libs_resource_id'; do
+            grep -q "$k" android/AndroidManifest.xml || { echo "::error::El manifest no contiene: $k"; exit 1; }
+          done
 
       - name: Configure (qmake)
         run: |
