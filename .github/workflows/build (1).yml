@@ -1,0 +1,128 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  QT_VERSION: 5.15.2
+  NDK_VERSION: r21e          # NDK que exige Qt 5.15.2
+  ANDROID_PLATFORM: android-29
+  BUILD_TOOLS: 29.0.3
+  APP_NAME: InputRedirectionClient-Qt-Android-Redux
+  ABIS: "arm64-v8a armeabi-v7a"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Qt 5.15.2 + Gradle del template de Qt necesitan JDK 8
+      - name: Setup JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Setup NDK ${{ env.NDK_VERSION }}
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: false
+
+      - name: Install Android SDK platform and build-tools
+        run: |
+          # sdkmanager moderno necesita JDK 17 (el runner ya lo trae)
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;${ANDROID_PLATFORM}" "build-tools;${BUILD_TOOLS}"
+          ls "$ANDROID_HOME/platforms"
+
+      - name: Export Android SDK/NDK paths
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${{ steps.ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
+      - name: Install Qt ${{ env.QT_VERSION }} (Android)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: android
+          arch: android
+          cache: true
+
+      - name: Check that QtGamepad is available
+        run: |
+          if ! ls "$QT_ROOT_DIR"/lib | grep -qi gamepad; then
+            echo "::error::Este Qt no incluye QtGamepad (el proyecto lo necesita)."
+            ls "$QT_ROOT_DIR"/lib | head -50
+            exit 1
+          fi
+
+      # El AndroidManifest.xml del repo tiene un segundo <manifest> anidado
+      # (XML mal formado) y el build.gradle es de AGP 2.2.3 / Gradle 3.4.
+      # En CI se corrige el manifest y se usa el template de Gradle de Qt.
+      - name: Patch Android files for CI
+        run: |
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("android/AndroidManifest.xml")
+          s = p.read_text(encoding="utf-8")
+          # quitar el <manifest ...> ... </manifest> interior (queda el exterior)
+          s = re.sub(r'\n<manifest xmlns:android=.*?\n</manifest>\s*$', '\n</manifest>\n',
+                     s, flags=re.S)
+          p.write_text(s, encoding="utf-8")
+          PY
+          sed -i 's/android:minSdkVersion="16"/android:minSdkVersion="21"/; s/android:targetSdkVersion="23"/android:targetSdkVersion="29"/' android/AndroidManifest.xml
+          grep -n 'uses-sdk' android/AndroidManifest.xml
+          python3 -c "import xml.dom.minidom as m; m.parse('android/AndroidManifest.xml'); print('manifest OK')"
+          rm -rf android/build.gradle android/gradlew android/gradlew.bat android/gradle
+
+      - name: Configure (qmake)
+        run: |
+          mkdir build && cd build
+          qmake ../${APP_NAME}.pro -spec android-clang CONFIG+=release \
+            "ANDROID_ABIS=${ABIS}"
+
+      - name: Compile
+        run: |
+          cd build
+          make -j"$(nproc)"
+          make INSTALL_ROOT="$PWD/android-build" install
+
+      - name: Package APK
+        run: |
+          cd build
+          androiddeployqt \
+            --input android-${APP_NAME}-deployment-settings.json \
+            --output android-build \
+            --android-platform "${ANDROID_PLATFORM}" \
+            --gradle
+          find android-build -name '*.apk' -print
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          find build/android-build -name '*.apk' -exec cp {} dist/ \;
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Publish release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
