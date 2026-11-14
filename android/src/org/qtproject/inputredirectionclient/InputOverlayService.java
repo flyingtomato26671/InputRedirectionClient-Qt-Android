@@ -140,6 +140,8 @@ public class InputOverlayService extends Service {
 
     /** Vista invisible que reenvia los eventos de gamepad a Qt. */
     private static final class GamepadSinkView extends View {
+        private final JoystickDpad joystickDpad = new JoystickDpad();
+
         GamepadSinkView(Context c) {
             super(c);
             setFocusable(true);
@@ -166,13 +168,24 @@ public class InputOverlayService extends Service {
 
         @Override
         public boolean dispatchGenericMotionEvent(MotionEvent event) {
-            if ((event.getSource() & InputDevice.SOURCE_CLASS_JOYSTICK) != 0
-                    && event.getAction() == MotionEvent.ACTION_MOVE) {
+            if (JoystickDpad.isJoystickMove(event)) {
                 try {
-                    return QtNative.dispatchGenericMotionEvent(event);
-                } catch (Throwable t) {
+                    QtNative.dispatchGenericMotionEvent(event);
+                } catch (Throwable t) { // Qt aun no esta cargado
                     return false;
                 }
+                // Consumido siempre: asi Android no convierte el stick en flechas.
+                joystickDpad.syncHat(event, new JoystickDpad.KeySink() {
+                    @Override
+                    public void send(KeyEvent e) {
+                        try {
+                            QtNative.dispatchKeyEvent(e);
+                        } catch (Throwable t) {
+                            // ignorado
+                        }
+                    }
+                });
+                return true;
             }
             return super.dispatchGenericMotionEvent(event);
         }
