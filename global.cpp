@@ -104,6 +104,13 @@ MyAxis Worker::getPreviousLAxis()
 
 void Worker::sendFrame(void)
 {
+    // GamepadMonitor escribe los ejes en el Worker global (`::worker`), pero este
+    // metodo se ejecuta en otro objeto (el que crea main.cpp para el hilo de envio),
+    // cuyos ejes siempre valen 0. Se leen los del global para que el Circle Pad y
+    // el C-Stick lleguen a la 3DS.
+    const MyAxis leftAxis = ::worker.getLeftAxis();
+    const MyAxis rightAxis = ::worker.getRightAxis();
+
     u32 hidPad = 0xfff;
     for(u32 i = 0; i < 2; i++)
     {
