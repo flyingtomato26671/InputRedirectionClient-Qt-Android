@@ -6,6 +6,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.widget.Toast;
 
 import org.qtproject.qt5.android.bindings.QtActivity;
@@ -18,6 +20,8 @@ import org.qtproject.qt5.android.bindings.QtActivity;
 public class MainActivity extends QtActivity {
     private static final String PREFS = "irc_prefs";
     private static final String KEY_ASKED = "asked_overlay_permission";
+
+    private final JoystickDpad joystickDpad = new JoystickDpad();
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -35,6 +39,26 @@ public class MainActivity extends QtActivity {
     protected void onPause() {
         super.onPause();
         InputOverlayService.show(this);
+    }
+
+    /**
+     * Entrega el joystick a Qt y lo da por atendido para que Android no lo
+     * convierta en flechas DPAD (el stick izquierdo no debe actuar como cruceta).
+     * La cruceta (hat) si genera flechas, via {@link JoystickDpad}.
+     */
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent ev) {
+        boolean handled = super.dispatchGenericMotionEvent(ev);
+        if (JoystickDpad.isJoystickMove(ev)) {
+            joystickDpad.syncHat(ev, new JoystickDpad.KeySink() {
+                @Override
+                public void send(KeyEvent event) {
+                    dispatchKeyEvent(event);
+                }
+            });
+            return true;
+        }
+        return handled;
     }
 
     /** Pide una sola vez el permiso "Mostrar sobre otras apps". */
